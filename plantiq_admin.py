@@ -557,10 +557,15 @@ setInterval(loadLicences, 30000);
 #  MAIN
 # ═══════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════
+#  MAIN
+# ═══════════════════════════════════════════════════════════════
+
+# Always init DB (needed when Railway runs via Procfile)
+init_db()
+
 if __name__ == "__main__":
     import uvicorn
-
-    init_db()
 
     print()
     print("  PlantIQ Admin — Licence Management")
