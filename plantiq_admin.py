@@ -18,7 +18,11 @@ from datetime import datetime, timedelta
 
 # ── Config ──
 _script_dir = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(_script_dir, "plantiq_licences.db")
+# Use /data/ on Railway (persistent volume), local folder otherwise
+if os.path.exists("/data"):
+    DB_PATH = "/data/plantiq_licences.db"
+else:
+    DB_PATH = os.path.join(_script_dir, "plantiq_licences.db")
 ADMIN_HOST = "127.0.0.1"
 ADMIN_PORT = 8601
 ADMIN_USERNAME = "Admin"
