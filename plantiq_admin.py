@@ -300,6 +300,18 @@ async def admin_dashboard(request: Request):
         return LOGIN_HTML
     return ADMIN_HTML
 
+@app.get("/download", response_class=HTMLResponse)
+async def download_page():
+    return DOWNLOAD_HTML
+
+@app.post("/api/check-key")
+async def check_key(req: ValidateReq):
+    """Public endpoint for download page — checks if key is valid."""
+    result = validate_licence(req.licence_key)
+    if result.get("valid"):
+        return {"valid": True, "client_name": result.get("client_name", ""), "message": "Licence verified — download below"}
+    return {"valid": False, "message": result.get("error", "Invalid key")}
+
 @app.post("/api/login")
 async def login(req: LoginReq, response: Response):
     if req.username == ADMIN_USERNAME and req.password == ADMIN_PASSWORD:
@@ -382,6 +394,207 @@ async def validate(req: ValidateReq):
 async def log(req: LogUsageReq):
     log_usage(req.licence_key, req.query_text)
     return {"status": "logged"}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  DOWNLOAD PAGE HTML
+# ═══════════════════════════════════════════════════════════════
+
+DOWNLOAD_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlantIQ — Plant 3D Intelligence Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root { --bg: #0a0b0f; --card: #12131a; --box: #1a1c25; --blue: #6078B4; --blue-glow: rgba(96,120,180,0.15); --green: #22c55e; --red: #ef4444; --text: #e8eaf0; --muted: #6b7280; --border: #1f2230; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* Hero section */
+.hero { text-align: center; padding: 60px 20px 40px; position: relative; overflow: hidden; }
+.hero::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 50% 80%, rgba(96,120,180,0.08) 0%, transparent 50%); pointer-events: none; }
+.brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 24px; }
+.brand-logo { font-size: 48px; font-weight: 900; letter-spacing: -1px; }
+.brand-logo span:first-child { color: var(--blue); }
+.brand-logo span:last-child { color: #fff; }
+.brand-badge { background: var(--blue); color: #fff; font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; }
+.hero-title { font-size: 20px; font-weight: 300; color: var(--text); margin-bottom: 8px; letter-spacing: 0.5px; }
+.hero-title strong { font-weight: 600; color: #fff; }
+.hero-sub { font-size: 13px; color: var(--muted); max-width: 480px; margin: 0 auto; line-height: 1.6; }
+
+/* Main content */
+.main { max-width: 560px; margin: 0 auto; padding: 0 20px 60px; }
+
+/* Cards */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 36px; margin-bottom: 24px; }
+.card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.card-icon { width: 36px; height: 36px; background: var(--blue-glow); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+.card-icon svg { width: 18px; height: 18px; stroke: var(--blue); fill: none; stroke-width: 2; }
+.card-title { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+
+/* Form */
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+.field input { width: 100%; padding: 14px 16px; background: var(--box); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 16px; font-family: 'SF Mono', 'Consolas', monospace; letter-spacing: 3px; text-align: center; outline: none; transition: border 0.2s; }
+.field input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-glow); }
+.field input::placeholder { color: #3a3e4a; letter-spacing: 3px; }
+
+.btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: all 0.2s; }
+.btn:hover { transform: translateY(-1px); }
+.btn-blue { background: var(--blue); color: #fff; }
+.btn-blue:hover { box-shadow: 0 8px 30px rgba(96,120,180,0.3); }
+.btn-green { background: var(--green); color: #fff; }
+.btn-green:hover { box-shadow: 0 8px 30px rgba(34,197,94,0.3); }
+
+.status { padding: 14px; border-radius: 10px; margin-top: 16px; font-size: 13px; font-weight: 500; display: none; }
+.status.ok { display: block; background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); color: var(--green); }
+.status.err { display: block; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
+
+/* Download section */
+.download-section { display: none; }
+.download-section.show { display: block; }
+.welcome-msg { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.licence-info { font-size: 12px; color: var(--muted); margin-bottom: 24px; }
+.download-btn-wrap { margin-bottom: 28px; }
+.download-btn-wrap a { text-decoration: none; }
+
+/* Steps */
+.steps { margin-top: 8px; }
+.step { display: flex; gap: 14px; margin-bottom: 18px; align-items: flex-start; }
+.step-num { background: linear-gradient(135deg, var(--blue), #4a6aa0); color: #fff; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+.step-text { font-size: 13px; color: var(--muted); line-height: 1.6; padding-top: 4px; }
+.step-text strong { color: var(--text); }
+
+/* Features */
+.features { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+.feature { background: var(--box); border-radius: 10px; padding: 16px; text-align: center; }
+.feature-icon { font-size: 22px; margin-bottom: 6px; }
+.feature-text { font-size: 11px; color: var(--muted); font-weight: 500; }
+
+/* Footer */
+.footer { text-align: center; padding: 30px 20px; border-top: 1px solid var(--border); }
+.footer-logo { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.footer-logo a { color: var(--blue); text-decoration: none; font-weight: 600; }
+.footer-copy { font-size: 10px; color: #3a3e4a; }
+
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="hero">
+    <div class="brand">
+        <div class="brand-logo"><span>Plant</span><span>IQ</span></div>
+        <div class="brand-badge">Beta</div>
+    </div>
+    <div class="hero-title">Query your <strong>AutoCAD Plant 3D</strong> project in plain English</div>
+    <div class="hero-sub">Get instant answers on lines, valves, equipment, BOMs, data quality and more. Powered by AI.</div>
+</div>
+
+<div class="main">
+
+    <div class="features">
+        <div class="feature"><div class="feature-icon">&#9889;</div><div class="feature-text">Instant Answers</div></div>
+        <div class="feature"><div class="feature-icon">&#128202;</div><div class="feature-text">Export to Excel, Word, PDF</div></div>
+        <div class="feature"><div class="feature-icon">&#128275;</div><div class="feature-text">Secure &amp; Local</div></div>
+        <div class="feature"><div class="feature-icon">&#9881;</div><div class="feature-text">Works with Plant 3D</div></div>
+    </div>
+
+    <div class="card" id="verifyCard">
+        <div class="card-header">
+            <div class="card-icon"><svg viewBox="0 0 24 24" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+            <div class="card-title">Enter Your Licence Key</div>
+        </div>
+        <div class="field">
+            <label>Licence Key</label>
+            <input type="text" id="keyInput" placeholder="PIQ-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off" onkeydown="if(event.key==='Enter')verifyKey()">
+        </div>
+        <button class="btn btn-blue" id="verifyBtn" onclick="verifyKey()">Verify Licence</button>
+        <div class="status" id="status"></div>
+    </div>
+
+    <div class="card download-section" id="downloadSection">
+        <div class="welcome-msg" id="welcomeMsg">Welcome!</div>
+        <div class="licence-info">Your licence is verified. Download PlantIQ below and follow the setup steps.</div>
+
+        <div class="download-btn-wrap">
+            <a href="DOWNLOAD_URL_PLACEHOLDER" id="downloadBtn">
+                <button class="btn btn-green">&#11015; &nbsp; Download PlantIQ</button>
+            </a>
+        </div>
+
+        <div class="card-header" style="margin-top:8px">
+            <div class="card-icon"><svg viewBox="0 0 24 24" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <div class="card-title">Quick Setup</div>
+        </div>
+        <div class="steps">
+            <div class="step"><div class="step-num">1</div><div class="step-text">Download and <strong>unzip</strong> the file</div></div>
+            <div class="step"><div class="step-num">2</div><div class="step-text">Run <strong>INSTALL.bat</strong> — creates a desktop shortcut</div></div>
+            <div class="step"><div class="step-num">3</div><div class="step-text">Double-click <strong>PlantIQ</strong> on your desktop</div></div>
+            <div class="step"><div class="step-num">4</div><div class="step-text">Open <strong>Settings</strong> and paste your licence key</div></div>
+            <div class="step"><div class="step-num">5</div><div class="step-text"><strong>Browse</strong> to your Plant 3D project folder</div></div>
+            <div class="step"><div class="step-num">6</div><div class="step-text">Start asking questions — that's it!</div></div>
+        </div>
+    </div>
+
+</div>
+
+<div class="footer">
+    <div class="footer-logo">Built by <a href="https://evoke.engineering">Evoke Digital Engineering</a></div>
+    <div class="footer-copy">&copy; 2026 Evoke Digital Engineering Ltd. All rights reserved.</div>
+</div>
+
+<script>
+async function verifyKey() {
+    const key = document.getElementById('keyInput').value.trim().toUpperCase();
+    const status = document.getElementById('status');
+    const btn = document.getElementById('verifyBtn');
+    if (!key) return;
+    status.className = 'status'; status.style.display = 'none';
+    btn.innerHTML = '<span class="spinner"></span> Verifying...';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/api/check-key', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({licence_key: key})
+        });
+        const data = await r.json();
+        if (data.valid) {
+            status.className = 'status ok';
+            status.innerHTML = '&#10003; ' + data.message;
+            status.style.display = 'block';
+            document.getElementById('welcomeMsg').textContent = 'Welcome, ' + (data.client_name || '') + '!';
+            document.getElementById('downloadSection').classList.add('show');
+            document.getElementById('verifyCard').style.display = 'none';
+        } else {
+            status.className = 'status err';
+            status.innerHTML = '&#10007; ' + (data.message || 'Invalid licence key');
+            status.style.display = 'block';
+        }
+    } catch(e) {
+        status.className = 'status err';
+        status.textContent = 'Connection error. Please try again.';
+        status.style.display = 'block';
+    }
+    btn.innerHTML = 'Verify Licence';
+    btn.disabled = false;
+}
+// Auto-format key input
+document.getElementById('keyInput').addEventListener('input', function(e) {
+    let v = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (v.length > 3) v = v.slice(0,3) + '-' + v.slice(3);
+    if (v.length > 8) v = v.slice(0,8) + '-' + v.slice(8);
+    if (v.length > 13) v = v.slice(0,13) + '-' + v.slice(13);
+    if (v.length > 18) v = v.slice(0,18);
+    e.target.value = v;
+});
+</script>
+</body>
+</html>"""
 
 
 # ═══════════════════════════════════════════════════════════════
