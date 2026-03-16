@@ -21,7 +21,8 @@ _script_dir = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(_script_dir, "plantiq_licences.db")
 ADMIN_HOST = "127.0.0.1"
 ADMIN_PORT = 8601
-ADMIN_PASSWORD = "evoke2026"  # Change this!
+ADMIN_USERNAME = "Admin"
+ADMIN_PASSWORD = "Cadline2020!"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [admin] %(levelname)s: %(message)s")
 logger = logging.getLogger("admin")
@@ -241,14 +242,30 @@ def get_usage_history(licence_key, days=30):
 #  FASTAPI ADMIN SERVER
 # ═══════════════════════════════════════════════════════════════
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response, Cookie
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
 app = FastAPI(title="PlantIQ Admin")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# ── Session management ──
+_active_sessions = set()
+
+def _make_token():
+    return hashlib.sha256(f"{uuid.uuid4()}{time.time()}".encode()).hexdigest()
+
+def _check_auth(request: Request):
+    token = request.cookies.get("plantiq_session")
+    if not token or token not in _active_sessions:
+        return False
+    return True
+
+class LoginReq(BaseModel):
+    username: str
+    password: str
 
 
 class CreateLicenceReq(BaseModel):
@@ -274,47 +291,80 @@ class LogUsageReq(BaseModel):
 # ── API Endpoints ──
 
 @app.get("/", response_class=HTMLResponse)
-async def admin_dashboard():
+async def admin_dashboard(request: Request):
+    if not _check_auth(request):
+        return LOGIN_HTML
     return ADMIN_HTML
 
+@app.post("/api/login")
+async def login(req: LoginReq, response: Response):
+    if req.username == ADMIN_USERNAME and req.password == ADMIN_PASSWORD:
+        token = _make_token()
+        _active_sessions.add(token)
+        response.set_cookie("plantiq_session", token, httponly=True, samesite="lax", max_age=86400)
+        return {"status": "ok"}
+    raise HTTPException(status_code=401, detail="Invalid username or password")
+
+@app.get("/logout")
+async def logout(request: Request):
+    token = request.cookies.get("plantiq_session")
+    if token:
+        _active_sessions.discard(token)
+    response = RedirectResponse("/")
+    response.delete_cookie("plantiq_session")
+    return response
 
 @app.get("/api/licences")
-async def list_licences():
+async def list_licences(request: Request):
+    if not _check_auth(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return {"licences": get_all_licences()}
 
 
 @app.post("/api/licences")
-async def create(req: CreateLicenceReq):
+async def create(req: CreateLicenceReq, request: Request):
+    if not _check_auth(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     key = create_licence(req.client_name, req.company, req.duration, req.daily_limit, req.notes)
     return {"licence_key": key, "status": "created"}
 
 
 @app.patch("/api/licences/{key}")
-async def update(key: str, req: UpdateLicenceReq):
+async def update(key: str, req: UpdateLicenceReq, request: Request):
+    if not _check_auth(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     update_licence(key, req.daily_limit, req.notes, req.duration)
     return {"status": "updated"}
 
 
 @app.post("/api/licences/{key}/activate")
-async def activate(key: str):
+async def activate(key: str, request: Request):
+    if not _check_auth(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     toggle_licence(key, True)
     return {"status": "activated"}
 
 
 @app.post("/api/licences/{key}/deactivate")
-async def deactivate(key: str):
+async def deactivate(key: str, request: Request):
+    if not _check_auth(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     toggle_licence(key, False)
     return {"status": "deactivated"}
 
 
 @app.delete("/api/licences/{key}")
-async def remove(key: str):
+async def remove(key: str, request: Request):
+    if not _check_auth(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     delete_licence(key)
     return {"status": "deleted"}
 
 
 @app.get("/api/licences/{key}/usage")
-async def usage(key: str, days: int = 30):
+async def usage(key: str, days: int = 30, request: Request = None):
+    if not _check_auth(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return {"usage": get_usage_history(key, days)}
 
 
@@ -328,6 +378,76 @@ async def validate(req: ValidateReq):
 async def log(req: LogUsageReq):
     log_usage(req.licence_key, req.query_text)
     return {"status": "logged"}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  LOGIN PAGE HTML
+# ═══════════════════════════════════════════════════════════════
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlantIQ Admin — Login</title>
+<style>
+:root { --bg: #0d0e12; --card: #131419; --box: #191c23; --blue: #6078B4; --green: #22c55e; --red: #ef4444; --text: #e2e8f0; --muted: #8892a8; --border: #2a2e3a; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.login-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 40px; width: 380px; text-align: center; }
+.logo { font-size: 32px; font-weight: 900; margin-bottom: 4px; }
+.logo span:first-child { color: var(--blue); }
+.logo span:last-child { color: #fff; }
+.subtitle { font-size: 10px; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 30px; }
+.field { margin-bottom: 16px; text-align: left; }
+.field label { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.field input { width: 100%; padding: 10px 14px; background: var(--box); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; outline: none; }
+.field input:focus { border-color: var(--blue); }
+.btn { width: 100%; padding: 12px; background: var(--blue); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; margin-top: 8px; }
+.btn:hover { opacity: 0.9; }
+.error { color: var(--red); font-size: 12px; margin-top: 12px; display: none; }
+.footer { font-size: 10px; color: var(--muted); margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="login-card">
+    <div class="logo"><span>Plant</span><span>IQ</span></div>
+    <div class="subtitle">Admin Login</div>
+    <div class="field">
+        <label>Username</label>
+        <input type="text" id="username" placeholder="Enter username" autofocus>
+    </div>
+    <div class="field">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn" onclick="doLogin()">Sign In</button>
+    <div class="error" id="errorMsg">Invalid username or password</div>
+    <div class="footer">Evoke Digital Engineering &copy; 2026</div>
+</div>
+<script>
+async function doLogin() {
+    const user = document.getElementById('username').value.trim();
+    const pass = document.getElementById('password').value;
+    if (!user || !pass) return;
+    try {
+        const r = await fetch('/api/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username: user, password: pass})
+        });
+        if (r.ok) {
+            window.location.href = '/';
+        } else {
+            document.getElementById('errorMsg').style.display = 'block';
+        }
+    } catch(e) {
+        document.getElementById('errorMsg').style.display = 'block';
+    }
+}
+</script>
+</body>
+</html>"""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -395,8 +515,13 @@ h1 span { color: #fff; }
 </style>
 </head>
 <body>
-<h1>Plant<span>IQ</span> Admin</h1>
-<div class="subtitle">Licence Management &amp; Usage Tracking</div>
+<div style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+        <h1>Plant<span>IQ</span> Admin</h1>
+        <div class="subtitle">Licence Management &amp; Usage Tracking</div>
+    </div>
+    <a href="/logout" class="btn btn-small" style="background:var(--box);color:var(--muted);text-decoration:none;margin-top:8px">LOGOUT</a>
+</div>
 
 <div class="stats-row">
     <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Total Licences</div></div>
