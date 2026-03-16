@@ -521,7 +521,7 @@ body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); c
         <div class="licence-info">Your licence is verified. Download PlantIQ below and follow the setup steps.</div>
 
         <div class="download-btn-wrap">
-            <a href="DOWNLOAD_URL_PLACEHOLDER" id="downloadBtn">
+            <a href="https://github.com/Matthevs/plantiq-admin/releases/download/V1.06/PlantIQ.zip" id="downloadBtn">
                 <button class="btn btn-green">&#11015; &nbsp; Download PlantIQ</button>
             </a>
         </div>
